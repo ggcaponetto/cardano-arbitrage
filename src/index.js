@@ -44,7 +44,7 @@ const fillFirstInput = async (page, amount) => {
     fs.writeFileSync("tokens/report.txt", ``)
 
     const browser = await puppeteer.launch({
-        headless: true
+        headless: false
     });
     const page = await browser.newPage();
 
@@ -62,7 +62,7 @@ const fillFirstInput = async (page, amount) => {
             console.log(`value: ${value}`);
             return value;
         })
-        await page.screenshot({ path: `${outputDir}/pair_${pairs[i].id}_sundaeswap.png` });
+        // await page.screenshot({ path: `${outputDir}/pair_${pairs[i].id}_sundaeswap.png` });
 
         // second page
         await page.goto(pairs[i].minswap, {
@@ -75,23 +75,23 @@ const fillFirstInput = async (page, amount) => {
             console.log(`value: ${value}`);
             return value;
         })
-        await page.screenshot({ path: `${outputDir}/pair_${pairs[i].id}_minswap.png` });
+        // await page.screenshot({ path: `${outputDir}/pair_${pairs[i].id}_minswap.png` });
         let bestBuyOffer = Math.min(sundaeswapValue, minswapValue)/swapAmountADA;
         let marginTargetPair = Math.abs(sundaeswapValue - minswapValue);
         let profitADA = bestBuyOffer * marginTargetPair;
         let marginPercentage = ((profitADA/swapAmountADA) * 100)
         let marginPercentageText = `${((profitADA/swapAmountADA) * 100).toFixed(4)} %`
 
-        console.log(`arbitrage-evaluation: ${JSON.stringify({
-            id: pairs[i].id, sundaeswapValue, minswapValue, marginTargetPair, profitADA, marginPercentageText
-        })}`);
+        let reportObject = {
+            id: pairs[i].id, sundaeswapValue, minswapValue, marginTargetPair, profitADA, marginPercentageText,
+            policyId: pairs[i].id.substring(0, 56), encodedAssetName: pairs[i].id.substring(56, pairs[i].id.length)
+        }
+        console.log(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`);
         console.log(`processed ${i+1}/${assets.length} tokens (${((i/assets.length)*100).toFixed(4)}%). tradable tokens: ${tradable.length}/${assets.length}`)
         if(marginPercentage && marginPercentage > 0){
             tradable.push(pairs[i].id);
             fs.appendFileSync("tokens/tradable.txt", `\n${pairs[i].id}`)
-            fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify({
-                id: pairs[i].id, sundaeswapValue, minswapValue, marginTargetPair, profitADA, marginPercentageText, time: (new Date()).toString()
-            })}`)
+            fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify(reportObject)}`)
         } else {
             notTradable.push(pairs[i].id);
             fs.appendFileSync("tokens/not-tradable.txt", `\n${pairs[i].id}`)

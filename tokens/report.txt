@@ -1,0 +1,3 @@
+
+{"id":"025146866af908340247fe4e9672d5ac7059f1e8534696b5f920c9e66362544843","sundaeswapValue":"18082.523101","minswapValue":"11.6521","marginTargetPair":18070.871001,"profitADA":210.5635959907521,"marginPercentageText":"21.0564 %","time":"Thu Mar 10 2022 16:23:36 GMT+0100 (Central European Standard Time)"}
+{"id":"05481566c1accd189a6cf46f8d17d794c918101eaa313e9a62aed3a7707473","sundaeswapValue":"37481790.579","minswapValue":"31475900","marginTargetPair":6005890.579000004,"profitADA":189040811275.54623,"marginPercentageText":"18904081127.5546 %","time":"Thu Mar 10 2022 16:25:04 GMT+0100 (Central European Standard Time)"}

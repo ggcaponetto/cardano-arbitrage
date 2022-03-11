@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const fs = require("fs");
 const yargs = require('yargs/yargs')
 const { hideBin } = require('yargs/helpers')
+const chalk = require('chalk');
 const argv = yargs(hideBin(process.argv)).argv
 
 const tokensFileBuffer = fs.readFileSync("tokens/tokens.txt");
@@ -82,8 +83,10 @@ const fillFirstInput = async (page, amount) => {
     let swapAmountADA;
     let sundaeswapValue;
     let sundaeswapMinimumValueReceived;
+    let sundaeSwapPriceImpact;
     let minswapValue;
     let minswapMinimumValueReceived;
+    let minswapPriceImpact;
     for(let i = 0; i < pairs.length; i++){
         for(let j = 0; j < swapAmountsADA.length; j++){
             swapAmountADA = swapAmountsADA[j];
@@ -134,6 +137,17 @@ const fillFirstInput = async (page, amount) => {
                 let minAmountReveived = parseFloat(`${childen[0].innerHTML}${childen[1].innerHTML}`);
                 return minAmountReveived;
             });
+            sundaeSwapPriceImpact = await page.evaluate(() => {
+                let elements = [];
+                for (const element of document.querySelectorAll("div")) {
+                    if (element.textContent.includes("Price Impact")) {
+                        elements.push(element)
+                    }
+                }
+                let children = elements[elements.length-1].children[1].children;
+                let priceImpact = parseFloat(`${children[1].innerHTML}`);
+                return priceImpact;
+            });
 
             // minswap page
             await page.goto(pairs[i].minswap, {
@@ -154,30 +168,48 @@ const fillFirstInput = async (page, amount) => {
                         elements.push(element)
                     }
                 }
-                let childen = [...elements[elements.length-2].children].filter(child => child.nodeType === Node.TEXT_NODE);
-                let minAmountReveived = parseFloat(`${childen[0].innerHTML}${childen[1].innerHTML}`);
+                let editedValue = [...elements[elements.length-2].children][1].childNodes[0].textContent.replace(",", "");
+                let minAmountReveived = parseFloat(`${editedValue}`);
                 return minAmountReveived;
+            });
+            minswapPriceImpact = await page.evaluate(() => {
+                let elements = [];
+                for (const element of document.querySelectorAll("div")) {
+                    if (element.textContent.includes("Price Impact")) {
+                        elements.push(element)
+                    }
+                }
+                let editedValue = [...elements[elements.length-2].children][1].childNodes[0].textContent.replace(",", "");
+                let priceImpact = parseFloat(`${editedValue}`);
+                return priceImpact;
             });
 
             let bestBuyOffer = Math.min(sundaeswapValue, minswapValue)/swapAmountADA;
             let marginTargetPair = Math.abs(sundaeswapValue - minswapValue);
             let profitADA = bestBuyOffer * marginTargetPair;
-            let marginPercentage = ((profitADA/swapAmountADA) * 100)
-            let marginPercentageText = `${((profitADA/swapAmountADA) * 100).toFixed(4)} %`
+            let marginPercentage = Math.abs((sundaeswapMinimumValueReceived/minswapMinimumValueReceived) * 100)
+            let marginPercentageText = `${marginPercentage} %`
 
             let reportObject = {
+                marginPercentageText,
                 swapAmountADA,
                 policyId: pairs[i].id.substring(0, 56),
-                sundaeswapMinimumValueReceived
+                sundaeswapMinimumValueReceived,
+                sundaeSwapPriceImpact,
+                minswapMinimumValueReceived,
+                minswapPriceImpact
             }
-            console.log(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`);
-            console.log(`processed ${i+1}/${assets.length} tokens (${((i/assets.length)*100).toFixed(4)}%)`)
-            if(marginPercentage && marginPercentage > 0){
+            if(marginPercentage > 1 && minswapPriceImpact < 5 && sundaeSwapPriceImpact < 5){
+                reportObject.profitable = true;
+                console.log(chalk.greenBright(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
                 fs.appendFileSync("tokens/tradable.txt", `\n${pairs[i].id}`)
                 fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify(reportObject)}`)
             } else {
+                reportObject.profitable = true;
+                console.log(chalk.white(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
                 fs.appendFileSync("tokens/not-tradable.txt", `\n${pairs[i].id}`)
             }
+            console.log(`processed ${i+1}/${assets.length} tokens (${((i/assets.length)*100).toFixed(4)}%)`)
         }
     }
     await browser.close();

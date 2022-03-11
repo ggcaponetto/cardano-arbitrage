@@ -1,4 +1,0 @@
-
-{"swapAmountADA":500,"policyId":"05481566c1accd189a6cf46f8d17d794c918101eaa313e9a62aed3a7","sundaeswapMinimumValueReceived":29}
-{"swapAmountADA":1000,"policyId":"05481566c1accd189a6cf46f8d17d794c918101eaa313e9a62aed3a7","sundaeswapMinimumValueReceived":36}
-{"swapAmountADA":500,"policyId":"0c92aabef5a8f91a36470d0762806c165c0d04aa992541e25d55486a","sundaeswapMinimumValueReceived":691.18595}

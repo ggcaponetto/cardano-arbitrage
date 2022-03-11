@@ -5,12 +5,16 @@
   "main": "index.js",
   "scripts": {
     "start": "rimraf output/* && node src/index.js",
+    "start-new-scan": "rimraf output/* && node src/index.js --clean-tradable --clean-not-tradable --clean-report --resume",
+    "start-resume": "rimraf output/* && node src/index.js --resume",
+    "start-tradable-tokens": "rimraf output/* && node src/index.js --clean-report --tradable-tokens",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "puppeteer": "^13.5.1",
-    "rimraf": "^3.0.2"
+    "rimraf": "^3.0.2",
+    "yargs": "^17.3.1"
   }
 }

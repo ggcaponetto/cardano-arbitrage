@@ -1,20 +1,37 @@
 const puppeteer = require('puppeteer');
 const fs = require("fs");
+const yargs = require('yargs/yargs')
+const { hideBin } = require('yargs/helpers')
+const argv = yargs(hideBin(process.argv)).argv
+
 const tokensFileBuffer = fs.readFileSync("tokens/tokens.txt");
 const tokensTradableFileBuffer = fs.readFileSync("tokens/tradable.txt");
 const tokensNotTradableFileBuffer = fs.readFileSync("tokens/not-tradable.txt");
-const tokensFileString = tokensFileBuffer.toString();
-const tokensTradableFileString = tokensTradableFileBuffer.toString();
-const tokensNotTradableFileString = tokensNotTradableFileBuffer.toString();
 
+const tokensFileString = tokensFileBuffer.toString("utf-8");
+const tokensTradableFileString = tokensTradableFileBuffer.toString("utf-8");
+const tokensNotTradableFileString = tokensNotTradableFileBuffer.toString("utf-8");
+
+const tokensArray = tokensFileString.split("\n").map(tokenId => tokenId.trim());
+const tokensTradableArray = tokensTradableFileString.split("\n").map(tokenId => tokenId.trim());
+const tokensNotTradableArray = tokensNotTradableFileString.split("\n").map(tokenId => tokenId.trim());
 
 const outputDir = "output"
-const swapAmountADA= 1000;
-const tradable = [];
-const notTradable = [];
+const swapAmountsADA = [
+    500,
+    1000
+]
 
-// example: 9a9693a9a37912a5097918f97918d15240c92ab729a0b7c4aa144d7753554e444145
-const encodedAssets = tokensFileBuffer.toString("utf-8").split("\n").map(tokenId => tokenId.trim());
+const encodedAssets = (()=>{
+    if(argv["resume"]){
+        return tokensArray;
+    } else if(argv["tradable-tokens"]){
+        return  tokensTradableArray;
+    } else {
+        throw new Error("please provide an argument among [--tradable-tokens, --resume]");
+    }
+})();
+
 console.log(`${encodedAssets.length} tokens.`);
 const assets = encodedAssets.map(encodedAsset => {
     return {
@@ -31,6 +48,7 @@ const getPair = (asset) => {
     }
 }
 const pairs = assets.map(asset => getPair(asset));
+
 const fillFirstInput = async (page, amount) => {
     await page.type('input', amount, {
         delay: 100
@@ -39,62 +57,127 @@ const fillFirstInput = async (page, amount) => {
 (async () => {
 
     // clear the tradable and not-tradable token files.
-    fs.writeFileSync("tokens/tradable.txt", ``)
-    fs.writeFileSync("tokens/not-tradable.txt", ``)
-    fs.writeFileSync("tokens/report.txt", ``)
+    if(argv["clean-tradable"]) {
+        console.log(`cleaning tradable.txt contents...`);
+        fs.writeFileSync("tokens/tradable.txt", ``)
+    }
+    if(argv["clean-not-tradable"]) {
+        console.log(`cleaning not-tradable.txt contents...`);
+        fs.writeFileSync("tokens/not-tradable.txt", ``)
+    }
+    if(argv["clean-report"]) {
+        console.log(`cleaning report.txt contents...`);
+        fs.writeFileSync("tokens/report.txt", ``)
+    }
 
     const browser = await puppeteer.launch({
-        headless: false
+        headless: !!argv["headless"],
+        args:[
+            '--start-maximized' // you can also use '--start-fullscreen'
+        ]
     });
     const page = await browser.newPage();
+    await page.setViewport({ width: 1366, height: 768});
 
+    let swapAmountADA;
     let sundaeswapValue;
+    let sundaeswapMinimumValueReceived;
     let minswapValue;
+    let minswapMinimumValueReceived;
     for(let i = 0; i < pairs.length; i++){
-        // first page
-        await page.goto(pairs[i].sundaeswap, {
-            waitUntil: "networkidle0"
-        });
-        await fillFirstInput(page, `${swapAmountADA}`)
-        await page.waitForTimeout(2000);
-        sundaeswapValue = await page.evaluate(() => {
-            let value = document.querySelectorAll("input")[1].value;
-            console.log(`value: ${value}`);
-            return value;
-        })
-        // await page.screenshot({ path: `${outputDir}/pair_${pairs[i].id}_sundaeswap.png` });
+        for(let j = 0; j < swapAmountsADA.length; j++){
+            swapAmountADA = swapAmountsADA[j];
+            // only process assets that are not in not-tradable.txt and tradable.txt when processing all tokens
+            if(argv["resume"]){
+                if(tokensTradableArray.includes(pairs[i].id)){
+                    console.log(`skipping token ${i}/${pairs.length}. it's included in the tradable.txt`);
+                    continue;
+                }
+                if(tokensNotTradableArray.includes(pairs[i].id)){
+                    console.log(`skipping token ${i}/${pairs.length}. it's included in the not-tradable.txt`);
+                    continue;
+                }
+            }
 
-        // second page
-        await page.goto(pairs[i].minswap, {
-            waitUntil: "networkidle0"
-        })
-        await fillFirstInput(page, `${swapAmountADA}`)
-        await page.waitForTimeout(2000);
-        minswapValue = await page.evaluate(() => {
-            let value = document.querySelectorAll("input")[1].value;
-            console.log(`value: ${value}`);
-            return value;
-        })
-        // await page.screenshot({ path: `${outputDir}/pair_${pairs[i].id}_minswap.png` });
-        let bestBuyOffer = Math.min(sundaeswapValue, minswapValue)/swapAmountADA;
-        let marginTargetPair = Math.abs(sundaeswapValue - minswapValue);
-        let profitADA = bestBuyOffer * marginTargetPair;
-        let marginPercentage = ((profitADA/swapAmountADA) * 100)
-        let marginPercentageText = `${((profitADA/swapAmountADA) * 100).toFixed(4)} %`
+            // sundaeswap page
+            await page.goto(pairs[i].sundaeswap, {
+                waitUntil: "networkidle0"
+            });
+            await fillFirstInput(page, `${swapAmountADA}`)
+            await page.waitForTimeout(2000);
+            sundaeswapValue = await page.evaluate(() => {
+                let value = parseFloat(document.querySelectorAll("input")[1].value);
+                console.log(`value: ${value}`);
+                return value;
+            })
+            // open the advanced trading tab
+            let swapSummaryButton = await page.evaluateHandle(() => {
+                let elements = [];
+                for (const a of document.querySelectorAll("p")) {
+                    if (a.textContent.includes("Swap Summary")) {
+                        elements.push(a)
+                    }
+                }
+                return elements[0].parentElement;
+            });
+            await swapSummaryButton.click();
 
-        let reportObject = {
-            id: pairs[i].id, sundaeswapValue, minswapValue, marginTargetPair, profitADA, marginPercentageText,
-            policyId: pairs[i].id.substring(0, 56), encodedAssetName: pairs[i].id.substring(56, pairs[i].id.length)
-        }
-        console.log(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`);
-        console.log(`processed ${i+1}/${assets.length} tokens (${((i/assets.length)*100).toFixed(4)}%). tradable tokens: ${tradable.length}/${assets.length}`)
-        if(marginPercentage && marginPercentage > 0){
-            tradable.push(pairs[i].id);
-            fs.appendFileSync("tokens/tradable.txt", `\n${pairs[i].id}`)
-            fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify(reportObject)}`)
-        } else {
-            notTradable.push(pairs[i].id);
-            fs.appendFileSync("tokens/not-tradable.txt", `\n${pairs[i].id}`)
+            // get the minimum amount of tokens received
+            sundaeswapMinimumValueReceived = await page.evaluate(() => {
+                let elements = [];
+                for (const element of document.querySelectorAll("div")) {
+                    if (element.textContent.includes("Min. tokens received")) {
+                        elements.push(element)
+                    }
+                }
+                let childen = elements[elements.length-2].children[1].children;
+                let minAmountReveived = parseFloat(`${childen[0].innerHTML}${childen[1].innerHTML}`);
+                return minAmountReveived;
+            });
+
+            // minswap page
+            await page.goto(pairs[i].minswap, {
+                waitUntil: "networkidle0"
+            })
+            await fillFirstInput(page, `${swapAmountADA}`)
+            await page.waitForTimeout(2000);
+            minswapValue = await page.evaluate(() => {
+                let value = parseFloat(document.querySelectorAll("input")[1].value);
+                console.log(`value: ${value}`);
+                return value;
+            })
+            // get the minimum amount of tokens received
+            minswapMinimumValueReceived = await page.evaluate(() => {
+                let elements = [];
+                for (const element of document.querySelectorAll("div")) {
+                    if (element.textContent.includes("Minimum received")) {
+                        elements.push(element)
+                    }
+                }
+                let childen = [...elements[elements.length-2].children].filter(child => child.nodeType === Node.TEXT_NODE);
+                let minAmountReveived = parseFloat(`${childen[0].innerHTML}${childen[1].innerHTML}`);
+                return minAmountReveived;
+            });
+
+            let bestBuyOffer = Math.min(sundaeswapValue, minswapValue)/swapAmountADA;
+            let marginTargetPair = Math.abs(sundaeswapValue - minswapValue);
+            let profitADA = bestBuyOffer * marginTargetPair;
+            let marginPercentage = ((profitADA/swapAmountADA) * 100)
+            let marginPercentageText = `${((profitADA/swapAmountADA) * 100).toFixed(4)} %`
+
+            let reportObject = {
+                swapAmountADA,
+                policyId: pairs[i].id.substring(0, 56),
+                sundaeswapMinimumValueReceived
+            }
+            console.log(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`);
+            console.log(`processed ${i+1}/${assets.length} tokens (${((i/assets.length)*100).toFixed(4)}%)`)
+            if(marginPercentage && marginPercentage > 0){
+                fs.appendFileSync("tokens/tradable.txt", `\n${pairs[i].id}`)
+                fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify(reportObject)}`)
+            } else {
+                fs.appendFileSync("tokens/not-tradable.txt", `\n${pairs[i].id}`)
+            }
         }
     }
     await browser.close();

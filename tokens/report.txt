@@ -1,0 +1,2 @@
+
+{"marginPercentageText":"72.7946 %","swapAmountADA":500,"policyId":"025146866af908340247fe4e9672d5ac7059f1e8534696b5f920c9e6","sundaeswapMinimumValueReceived":10635.674187,"sundaeSwapPriceImpact":0.38271,"minswapMinimumValueReceived":4959.46343,"minswapPriceImpact":51.97,"profitable":true}

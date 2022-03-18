@@ -4,10 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start-cluster": "node src/cluster-test.js",
     "start": "rimraf output/* && node src/index.js",
-    "start-new-scan": "rimraf output/* && node src/index.js --clean-tradable --clean-not-tradable --clean-report --resume",
+    "start-new-scan": "rimraf output/* && node src/index.js --clean-tradable --clean-not-tradable --clean-report --resume --headless",
     "start-resume": "rimraf output/* && node src/index.js --resume",
-    "start-tradable-tokens": "rimraf output/* && node src/index.js --clean-report --tradable-tokens",
+    "start-tradable-tokens": "rimraf output/* && node src/index.js --clean-report --tradable-tokens --headless",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -15,6 +16,7 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "puppeteer": "^13.5.1",
+    "puppeteer-cluster": "^0.23.0",
     "rimraf": "^3.0.2",
     "yargs": "^17.3.1"
   }

@@ -31,7 +31,7 @@ const encodedAssets = (()=>{
     }
 })();
 
-console.log(`${encodedAssets.length} tokens.`);
+// console.log(`${encodedAssets.length} tokens.`);
 const assets = encodedAssets.map(encodedAsset => {
     return {
         id: encodedAsset,
@@ -57,15 +57,15 @@ const fillFirstInput = async (page, amount) => {
 
     // clear the tradable and not-tradable token files.
     if(argv["clean-tradable"]) {
-        console.log(`cleaning tradable.txt contents...`);
+        // console.log(`cleaning tradable.txt contents...`);
         fs.writeFileSync("tokens/tradable.txt", ``)
     }
     if(argv["clean-not-tradable"]) {
-        console.log(`cleaning not-tradable.txt contents...`);
+        // console.log(`cleaning not-tradable.txt contents...`);
         fs.writeFileSync("tokens/not-tradable.txt", ``)
     }
     if(argv["clean-report"]) {
-        console.log(`cleaning report.txt contents...`);
+        // console.log(`cleaning report.txt contents...`);
         fs.writeFileSync("tokens/report.txt", ``)
     }
 
@@ -86,16 +86,16 @@ const fillFirstInput = async (page, amount) => {
         let minswapValue;
         let minswapMinimumValueReceived;
         let minswapPriceImpact;
-        console.log(`processing token ${pair.id}`);
+        // console.log(`processing token ${pair.id}`);
         try{
             swapAmountADA = swapAmountsADA[0];
             // only process assets that are not in not-tradable.txt and tradable.txt when processing all tokens
             if(argv["resume"]){
                 if(tokensTradableArray.includes(pair.id)){
-                    console.log(`skipping token ${i}/${pairs.length}. it's included in the tradable.txt`);
+                    // console.log(`skipping token ${i}/${pairs.length}. it's included in the tradable.txt`);
                 }
                 if(tokensNotTradableArray.includes(pair.id)){
-                    console.log(`skipping token ${i}/${pairs.length}. it's included in the not-tradable.txt`);
+                    // console.log(`skipping token ${i}/${pairs.length}. it's included in the not-tradable.txt`);
                 }
             }
 
@@ -107,7 +107,7 @@ const fillFirstInput = async (page, amount) => {
             await page.waitForTimeout(2000);
             sundaeswapValue = await page.evaluate(() => {
                 let value = parseFloat(document.querySelectorAll("input")[1].value);
-                console.log(`value: ${value}`);
+                // console.log(`value: ${value}`);
                 return value;
             })
             // open the advanced trading tab
@@ -154,7 +154,7 @@ const fillFirstInput = async (page, amount) => {
             await page.waitForTimeout(2000);
             minswapValue = await page.evaluate(() => {
                 let value = parseFloat(document.querySelectorAll("input")[1].value);
-                console.log(`value: ${value}`);
+                // console.log(`value: ${value}`);
                 return value;
             })
             // get the minimum amount of tokens received
@@ -195,17 +195,17 @@ const fillFirstInput = async (page, amount) => {
             }
             if(marginPercentage > 0 /*&& minswapPriceImpact < 5 && sundaeSwapPriceImpact < 5*/){
                 reportObject.profitable = true;
-                console.log(chalk.greenBright(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
+                // console.log(chalk.greenBright(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
                 fs.appendFileSync("tokens/tradable.txt", `\n${pair.id}`)
                 fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify(reportObject)}`)
             } else {
                 reportObject.profitable = false;
-                console.log(chalk.white(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
+                // console.log(chalk.white(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
                 fs.appendFileSync("tokens/not-tradable.txt", `\n${pair.id}`)
             }
-            console.log(`processed ${swapAmountADA} tokens`);
+            // console.log(`processed ${swapAmountADA} tokens`);
         }catch (e){
-            console.error(`could not process ${swapAmountADA}`);
+            // console.error(`could not process ${swapAmountADA}`);
         }
     }
     const cluster = await Cluster.launch({
@@ -215,13 +215,14 @@ const fillFirstInput = async (page, amount) => {
     });
     await cluster.task(async ({ page, data }) => {
         await page.setViewport({ width: 1366, height: 768});
-        data.url = `processing token ${data.pair.id}`
+        data.url = `processing token ${data.pairIndex}/${pairs.length} with ID ${data.pair.id}`
         await processPairs(page, data.pair)
     });
     for (let i = 0; i < pairs.length; i++) {
         // add the pair to the cluster
         cluster.queue({
-            pair: pairs[i]
+            pair: pairs[i],
+            pairIndex: i,
         });
     }
     // many more pages

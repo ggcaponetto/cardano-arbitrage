@@ -32,6 +32,8 @@ const encodedAssets = (()=>{
     }
 })();
 
+const tempReport = [];
+
 // console.log(`${encodedAssets.length} tokens.`);
 const assets = encodedAssets.map(encodedAsset => {
     return {
@@ -115,158 +117,162 @@ async function getMinswapQueue(){
     });
     */
 
-    async function processPairs(page, pair){
-        let swapAmountADA;
-        let sundaeswapValue;
-        let sundaeswapMinimumValueReceived;
-        let sundaeSwapPriceImpact;
-        let minswapValue;
-        let minswapMinimumValueReceived;
-        let minswapPriceImpact;
-        // console.log(`processing token ${pair.id}`);
-        try{
-            swapAmountADA = swapAmountsADA[0];
-            // only process assets that are not in not-tradable.txt and tradable.txt when processing all tokens
-            if(argv["resume"]){
-                if(tokensTradableArray.includes(pair.id)){
-                    // console.log(`skipping token ${i}/${pairs.length}. it's included in the tradable.txt`);
+    while(true){
+        async function processPairs(page, pair){
+            let swapAmountADA;
+            let sundaeswapValue;
+            let sundaeswapMinimumValueReceived;
+            let sundaeSwapPriceImpact;
+            let minswapValue;
+            let minswapMinimumValueReceived;
+            let minswapPriceImpact;
+            // console.log(`processing token ${pair.id}`);
+            try{
+                swapAmountADA = swapAmountsADA[0];
+                // only process assets that are not in not-tradable.txt and tradable.txt when processing all tokens
+                if(argv["resume"]){
+                    if(tokensTradableArray.includes(pair.id)){
+                        // console.log(`skipping token ${i}/${pairs.length}. it's included in the tradable.txt`);
+                    }
+                    if(tokensNotTradableArray.includes(pair.id)){
+                        // console.log(`skipping token ${i}/${pairs.length}. it's included in the not-tradable.txt`);
+                    }
                 }
-                if(tokensNotTradableArray.includes(pair.id)){
-                    // console.log(`skipping token ${i}/${pairs.length}. it's included in the not-tradable.txt`);
+
+                // sundaeswap page
+                await page.goto(pair.sundaeswap, {
+                    waitUntil: "networkidle0"
+                });
+                await fillFirstInput(page, `${swapAmountADA}`)
+                await page.waitForTimeout(2000);
+                sundaeswapValue = await page.evaluate(() => {
+                    let value = parseFloat(document.querySelectorAll("input")[1].value);
+                    // console.log(`value: ${value}`);
+                    return value;
+                })
+                // open the advanced trading tab
+                let swapSummaryButton = await page.evaluateHandle(() => {
+                    let elements = [];
+                    for (const a of document.querySelectorAll("p")) {
+                        if (a.textContent.includes("Swap Summary")) {
+                            elements.push(a)
+                        }
+                    }
+                    return elements[0].parentElement;
+                });
+                await swapSummaryButton.click();
+
+                // get the minimum amount of tokens received
+                sundaeswapMinimumValueReceived = await page.evaluate(() => {
+                    let elements = [];
+                    for (const element of document.querySelectorAll("div")) {
+                        if (element.textContent.includes("Min. tokens received")) {
+                            elements.push(element)
+                        }
+                    }
+                    let childen = elements[elements.length-2].children[1].children;
+                    let minAmountReveived = parseFloat(`${childen[0].innerHTML}${childen[1].innerHTML}`.replace(",", ""));
+                    return minAmountReveived;
+                });
+                sundaeSwapPriceImpact = await page.evaluate(() => {
+                    let elements = [];
+                    for (const element of document.querySelectorAll("div")) {
+                        if (element.textContent.includes("Price Impact")) {
+                            elements.push(element)
+                        }
+                    }
+                    let children = elements[elements.length-1].children[1].children;
+                    let priceImpact = parseFloat(`${children[1].innerHTML}`);
+                    return priceImpact;
+                });
+
+                // minswap page
+                await page.goto(pair.minswap, {
+                    waitUntil: "networkidle0"
+                })
+                await fillFirstInput(page, `${swapAmountADA}`)
+                await page.waitForTimeout(2000);
+                minswapValue = await page.evaluate(() => {
+                    let value = parseFloat(document.querySelectorAll("input")[1].value);
+                    // console.log(`value: ${value}`);
+                    return value;
+                })
+                // get the minimum amount of tokens received
+                minswapMinimumValueReceived = await page.evaluate(() => {
+                    let elements = [];
+                    for (const element of document.querySelectorAll("div")) {
+                        if (element.textContent.includes("Minimum received")) {
+                            elements.push(element)
+                        }
+                    }
+                    let editedValue = [...elements[elements.length-2].children][1].childNodes[0].textContent.replace(",", "");
+                    let minAmountReveived = parseFloat(`${editedValue}`);
+                    return minAmountReveived;
+                });
+                minswapPriceImpact = await page.evaluate(() => {
+                    let elements = [];
+                    for (const element of document.querySelectorAll("div")) {
+                        if (element.textContent.includes("Price Impact")) {
+                            elements.push(element)
+                        }
+                    }
+                    let editedValue = [...elements[elements.length-2].children][1].childNodes[0].textContent.replace(",", "");
+                    let priceImpact = parseFloat(`${editedValue}`);
+                    return priceImpact;
+                });
+
+                let marginPercentage = (Math.abs(sundaeswapMinimumValueReceived - minswapMinimumValueReceived) / ((sundaeswapMinimumValueReceived + minswapMinimumValueReceived) / 2)) * 100;
+                let marginPercentageText = `${marginPercentage.toFixed(4)} %`
+
+                let sundaeQueueResponse = await getSundaeQueue();
+                let minswapQueueResponse = await getMinswapQueue();
+                let reportObject = {
+                    marginPercentageText,
+                    swapAmountADA,
+                    policyId: pair.id.substring(0, 56),
+                    sundaeswapMinimumValueReceived,
+                    sundaeSwapPriceImpact,
+                    minswapMinimumValueReceived,
+                    minswapPriceImpact,
+                    sundaeQueue: sundaeQueueResponse.data,
+                    minswapQueue: minswapQueueResponse.data
                 }
+                if(marginPercentage > 0 /*&& minswapPriceImpact < 5 && sundaeSwapPriceImpact < 5*/){
+                    reportObject.profitable = true;
+                    console.log(chalk.greenBright(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
+                    fs.appendFileSync("tokens/tradable.txt", `\n${pair.id}`);
+                    fs.writeFileSync("tokens/report.json", JSON.stringify(tempReport))
+                    tempReport.push(reportObject);
+                } else {
+                    reportObject.profitable = false;
+                    console.log(chalk.white(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
+                    fs.appendFileSync("tokens/not-tradable.txt", `\n${pair.id}`)
+                }
+                // console.log(`processed ${swapAmountADA} tokens`);
+            }catch (e){
+                // console.error(`could not process ${swapAmountADA}`);
             }
-
-            // sundaeswap page
-            await page.goto(pair.sundaeswap, {
-                waitUntil: "networkidle0"
-            });
-            await fillFirstInput(page, `${swapAmountADA}`)
-            await page.waitForTimeout(2000);
-            sundaeswapValue = await page.evaluate(() => {
-                let value = parseFloat(document.querySelectorAll("input")[1].value);
-                // console.log(`value: ${value}`);
-                return value;
-            })
-            // open the advanced trading tab
-            let swapSummaryButton = await page.evaluateHandle(() => {
-                let elements = [];
-                for (const a of document.querySelectorAll("p")) {
-                    if (a.textContent.includes("Swap Summary")) {
-                        elements.push(a)
-                    }
-                }
-                return elements[0].parentElement;
-            });
-            await swapSummaryButton.click();
-
-            // get the minimum amount of tokens received
-            sundaeswapMinimumValueReceived = await page.evaluate(() => {
-                let elements = [];
-                for (const element of document.querySelectorAll("div")) {
-                    if (element.textContent.includes("Min. tokens received")) {
-                        elements.push(element)
-                    }
-                }
-                let childen = elements[elements.length-2].children[1].children;
-                let minAmountReveived = parseFloat(`${childen[0].innerHTML}${childen[1].innerHTML}`.replace(",", ""));
-                return minAmountReveived;
-            });
-            sundaeSwapPriceImpact = await page.evaluate(() => {
-                let elements = [];
-                for (const element of document.querySelectorAll("div")) {
-                    if (element.textContent.includes("Price Impact")) {
-                        elements.push(element)
-                    }
-                }
-                let children = elements[elements.length-1].children[1].children;
-                let priceImpact = parseFloat(`${children[1].innerHTML}`);
-                return priceImpact;
-            });
-
-            // minswap page
-            await page.goto(pair.minswap, {
-                waitUntil: "networkidle0"
-            })
-            await fillFirstInput(page, `${swapAmountADA}`)
-            await page.waitForTimeout(2000);
-            minswapValue = await page.evaluate(() => {
-                let value = parseFloat(document.querySelectorAll("input")[1].value);
-                // console.log(`value: ${value}`);
-                return value;
-            })
-            // get the minimum amount of tokens received
-            minswapMinimumValueReceived = await page.evaluate(() => {
-                let elements = [];
-                for (const element of document.querySelectorAll("div")) {
-                    if (element.textContent.includes("Minimum received")) {
-                        elements.push(element)
-                    }
-                }
-                let editedValue = [...elements[elements.length-2].children][1].childNodes[0].textContent.replace(",", "");
-                let minAmountReveived = parseFloat(`${editedValue}`);
-                return minAmountReveived;
-            });
-            minswapPriceImpact = await page.evaluate(() => {
-                let elements = [];
-                for (const element of document.querySelectorAll("div")) {
-                    if (element.textContent.includes("Price Impact")) {
-                        elements.push(element)
-                    }
-                }
-                let editedValue = [...elements[elements.length-2].children][1].childNodes[0].textContent.replace(",", "");
-                let priceImpact = parseFloat(`${editedValue}`);
-                return priceImpact;
-            });
-
-            let marginPercentage = (Math.abs(sundaeswapMinimumValueReceived - minswapMinimumValueReceived) / ((sundaeswapMinimumValueReceived + minswapMinimumValueReceived) / 2)) * 100;
-            let marginPercentageText = `${marginPercentage.toFixed(4)} %`
-
-            let sundaeQueueResponse = await getSundaeQueue();
-            let minswapQueueResponse = await getMinswapQueue();
-            let reportObject = {
-                marginPercentageText,
-                swapAmountADA,
-                policyId: pair.id.substring(0, 56),
-                sundaeswapMinimumValueReceived,
-                sundaeSwapPriceImpact,
-                minswapMinimumValueReceived,
-                minswapPriceImpact,
-                sundaeQueue: sundaeQueueResponse.data,
-                minswapQueue: minswapQueueResponse.data
-            }
-            if(marginPercentage > 0 /*&& minswapPriceImpact < 5 && sundaeSwapPriceImpact < 5*/){
-                reportObject.profitable = true;
-                console.log(chalk.greenBright(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
-                fs.appendFileSync("tokens/tradable.txt", `\n${pair.id}`)
-                fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify(reportObject)}`)
-            } else {
-                reportObject.profitable = false;
-                console.log(chalk.white(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
-                fs.appendFileSync("tokens/not-tradable.txt", `\n${pair.id}`)
-            }
-            // console.log(`processed ${swapAmountADA} tokens`);
-        }catch (e){
-            // console.error(`could not process ${swapAmountADA}`);
         }
-    }
-    const cluster = await Cluster.launch({
-        concurrency: Cluster.CONCURRENCY_CONTEXT,
-        maxConcurrency: 10,
-        monitor: true
-    });
-    await cluster.task(async ({ page, data }) => {
-        await page.setViewport({ width: 1366, height: 768});
-        data.url = `processing token ${data.pairIndex}/${pairs.length} with ID ${data.pair.id}`
-        await processPairs(page, data.pair)
-    });
-    for (let i = 0; i < pairs.length; i++) {
-        // add the pair to the cluster
-        cluster.queue({
-            pair: pairs[i],
-            pairIndex: i,
+        const cluster = await Cluster.launch({
+            concurrency: Cluster.CONCURRENCY_CONTEXT,
+            maxConcurrency: 10,
+            monitor: true
         });
+        await cluster.task(async ({ page, data }) => {
+            await page.setViewport({ width: 1366, height: 768});
+            data.url = `processing token ${data.pairIndex}/${pairs.length} with ID ${data.pair.id}`
+            await processPairs(page, data.pair)
+        });
+        for (let i = 0; i < pairs.length; i++) {
+            // add the pair to the cluster
+            cluster.queue({
+                pair: pairs[i],
+                pairIndex: i,
+            });
+        }
+        // many more pages
+        await cluster.idle();
+        await cluster.close();
+        console.log(chalk.greenBright(`restarting the crawler...`));
     }
-    // many more pages
-    await cluster.idle();
-    await cluster.close();
 })();

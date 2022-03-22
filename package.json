@@ -4,7 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start-cluster": "node src/cluster-test.js",
+    "gui": "npx concurrently \"npm run start-new-scan\" \"npm run serve-build\" \"npm run serve-report\" \"npm run open-browser\"",
+    "build-windows": "",
+    "serve-report": "npx http-server --cors -p 3556 tokens",
+    "build-gui": "cd gui && npm run build",
+    "serve-build": "npx http-server -p 3555 gui/build",
+    "open-browser": "open-cli http://localhost:3555",
     "start": "rimraf output/* && node src/index.js",
     "start-new-scan": "rimraf output/* && node src/index.js --clean-tradable --clean-not-tradable --clean-report --resume --headless",
     "start-resume": "rimraf output/* && node src/index.js --resume",
@@ -16,6 +21,9 @@
   "dependencies": {
     "axios": "^0.26.1",
     "chalk": "^4.1.2",
+    "concurrently": "^7.0.0",
+    "http-server": "^14.1.0",
+    "open-cli": "^7.0.1",
     "puppeteer": "^13.5.1",
     "puppeteer-cluster": "^0.23.0",
     "rimraf": "^3.0.2",

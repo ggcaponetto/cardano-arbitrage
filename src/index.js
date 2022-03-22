@@ -5,6 +5,7 @@ const { hideBin } = require('yargs/helpers')
 const chalk = require('chalk');
 const { Cluster } = require('puppeteer-cluster');
 const argv = yargs(hideBin(process.argv)).argv
+const axios = require("axios");
 
 const tokensFileBuffer = fs.readFileSync("tokens/tokens.txt");
 const tokensTradableFileBuffer = fs.readFileSync("tokens/tradable.txt");
@@ -19,7 +20,7 @@ const tokensTradableArray = tokensTradableFileString.split("\n").map(tokenId => 
 const tokensNotTradableArray = tokensNotTradableFileString.split("\n").map(tokenId => tokenId.trim());
 
 const swapAmountsADA = [
-    500
+    2000
 ]
 const encodedAssets = (()=>{
     if(argv["resume"]){
@@ -53,6 +54,42 @@ const fillFirstInput = async (page, amount) => {
         delay: 100
     })
 };
+
+async function getSundaeQueue(){
+    let data = '{"query":"query queueDepth($poolIdents: [String!]) {\\n  queueDepth(poolIdents: $poolIdents) {\\n    depth\\n    poolIdent\\n    pool {\\n      ...PoolFragment\\n    }\\n  }\\n}\\n\\nfragment PoolFragment on Pool {\\n  apr\\n  assetA {\\n    ...AssetFragment\\n  }\\n  assetB {\\n    ...AssetFragment\\n  }\\n  assetLP {\\n    ...AssetFragment\\n  }\\n  fee\\n  quantityA\\n  quantityB\\n  quantityLP\\n  ident\\n  assetID\\n}\\n\\nfragment AssetFragment on Asset {\\n  assetId\\n  policyId\\n  assetName\\n  decimals\\n  logo\\n  ticker\\n  dateListed\\n}\\n","operationName":"queueDepth"}';
+    let config = {
+        method: 'post',
+        url: 'https://stats.sundaeswap.finance/graphql',
+        headers: {
+            'Content-Type': 'text/plain'
+        },
+        data : data
+    };
+
+    return axios(config);
+}
+
+async function getMinswapQueue(){
+    let data = JSON.stringify({
+        "query": "\n    query TopPools($assetName: String, $offset: Int, $limit: Int) {\n  topPools(assetName: $assetName, offset: $offset, limit: $limit) {\n    assetA {\n      currencySymbol\n      tokenName\n      ...allMetadata\n    }\n    assetB {\n      currencySymbol\n      tokenName\n      ...allMetadata\n    }\n    reserveA\n    reserveB\n    lpAsset {\n      currencySymbol\n      tokenName\n    }\n    totalLiquidity\n    reserveADA\n    volumeADAByDay\n    volumeADAByWeek\n    pendingOrders\n  }\n}\n    \n    fragment allMetadata on Asset {\n  metadata {\n    name\n    ticker\n    url\n    decimals\n  }\n}\n    ",
+        "variables": {
+            "assetName": null,
+            "offset": 0,
+            "limit": 817
+        }
+    });
+    let config = {
+        method: 'post',
+        url: 'https://monorepo-mainnet-hehe.minswap.org/graphql',
+        headers: {
+            'content-type': 'application/json',
+            'accept': '*/*'
+        },
+        data : data
+    };
+    return axios(config);
+}
+
 (async () => {
 
     // clear the tradable and not-tradable token files.
@@ -184,6 +221,8 @@ const fillFirstInput = async (page, amount) => {
             let marginPercentage = (Math.abs(sundaeswapMinimumValueReceived - minswapMinimumValueReceived) / ((sundaeswapMinimumValueReceived + minswapMinimumValueReceived) / 2)) * 100;
             let marginPercentageText = `${marginPercentage.toFixed(4)} %`
 
+            let sundaeQueueResponse = await getSundaeQueue();
+            let minswapQueueResponse = await getMinswapQueue();
             let reportObject = {
                 marginPercentageText,
                 swapAmountADA,
@@ -191,16 +230,18 @@ const fillFirstInput = async (page, amount) => {
                 sundaeswapMinimumValueReceived,
                 sundaeSwapPriceImpact,
                 minswapMinimumValueReceived,
-                minswapPriceImpact
+                minswapPriceImpact,
+                sundaeQueue: sundaeQueueResponse.data,
+                minswapQueue: minswapQueueResponse.data
             }
             if(marginPercentage > 0 /*&& minswapPriceImpact < 5 && sundaeSwapPriceImpact < 5*/){
                 reportObject.profitable = true;
-                // console.log(chalk.greenBright(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
+                console.log(chalk.greenBright(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
                 fs.appendFileSync("tokens/tradable.txt", `\n${pair.id}`)
                 fs.appendFileSync("tokens/report.txt", `\n${JSON.stringify(reportObject)}`)
             } else {
                 reportObject.profitable = false;
-                // console.log(chalk.white(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
+                console.log(chalk.white(`arbitrage-evaluation: ${JSON.stringify(reportObject)}`));
                 fs.appendFileSync("tokens/not-tradable.txt", `\n${pair.id}`)
             }
             // console.log(`processed ${swapAmountADA} tokens`);
@@ -210,7 +251,7 @@ const fillFirstInput = async (page, amount) => {
     }
     const cluster = await Cluster.launch({
         concurrency: Cluster.CONCURRENCY_CONTEXT,
-        maxConcurrency: 4,
+        maxConcurrency: 10,
         monitor: true
     });
     await cluster.task(async ({ page, data }) => {
